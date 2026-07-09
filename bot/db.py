@@ -102,3 +102,44 @@ class MessageCache:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM cached WHERE created_at < ?", (cutoff_timestamp,))
             return cur.rowcount
+
+
+class SettingsStore:
+    """SQLite-backed per-owner settings, e.g. the chosen text style."""
+
+    DEFAULT_STYLE = "normal"
+
+    def __init__(self, path: str):
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS settings (
+                    owner_id INTEGER PRIMARY KEY,
+                    style TEXT NOT NULL DEFAULT 'normal'
+                )
+                """
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def get_style(self, owner_id: int) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT style FROM settings WHERE owner_id = ?", (owner_id,)
+            ).fetchone()
+        return row["style"] if row else self.DEFAULT_STYLE
+
+    def set_style(self, owner_id: int, style: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO settings (owner_id, style) VALUES (?, ?)
+                ON CONFLICT(owner_id) DO UPDATE SET style = excluded.style
+                """,
+                (owner_id, style),
+            )

@@ -1,3 +1,3 @@
-from . import antidelete, business, commands
+from . import antidelete, business, commands, style
 
-__all__ = ["antidelete", "business", "commands"]
+__all__ = ["antidelete", "business", "commands", "style"]

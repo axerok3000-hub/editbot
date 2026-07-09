@@ -4,8 +4,10 @@ from aiogram import Bot, Router
 from aiogram.types import BusinessConnection, Message
 
 from ..config import Config
-from ..db import MessageCache
+from ..db import MessageCache, SettingsStore
 from ..storage import ConnectionStore, ExcludedChatsStore
+from ..style_apply import apply_style_to_message
+from ..styles import DEFAULT_STYLE
 from ..typewriter import type_out
 from .antidelete import cache_incoming_message
 
@@ -39,6 +41,7 @@ async def on_business_message(
     store: ConnectionStore,
     excluded_chats: ExcludedChatsStore,
     cache: MessageCache,
+    settings: SettingsStore,
     config: Config,
 ) -> None:
     bcid = message.business_connection_id
@@ -59,19 +62,33 @@ async def on_business_message(
     text = message.text
     if text is None:
         return
+
     suffix = config.typewriter_suffix
-    if not text.endswith(suffix):
+    if text.endswith(suffix):
+        target_text = text[: -len(suffix)]
+        if not target_text:
+            return
+        await type_out(
+            bot=bot,
+            business_connection_id=bcid,
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            target_text=target_text,
+            owner_id=owner_id,
+        )
         return
 
-    target_text = text[: -len(suffix)]
-    if not target_text:
+    style = settings.get_style(owner_id)
+    if style == DEFAULT_STYLE:
         return
 
-    await type_out(
+    await apply_style_to_message(
         bot=bot,
+        settings=settings,
         business_connection_id=bcid,
         chat_id=message.chat.id,
         message_id=message.message_id,
-        target_text=target_text,
+        text=text,
+        style=style,
         owner_id=owner_id,
     )

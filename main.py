@@ -5,8 +5,8 @@ import time
 from aiogram import Bot, Dispatcher
 
 from bot.config import load_config
-from bot.db import MessageCache
-from bot.handlers import antidelete, business, commands
+from bot.db import MessageCache, SettingsStore
+from bot.handlers import antidelete, business, commands, style
 from bot.storage import ConnectionStore, ExcludedChatsStore
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,18 @@ async def main() -> None:
     store = ConnectionStore(config.connections_file)
     excluded_chats = ExcludedChatsStore(config.excluded_chats_file)
     cache = MessageCache(config.cache_db_file)
+    settings = SettingsStore(config.cache_db_file)
 
     bot = Bot(token=config.bot_token)
-    dp = Dispatcher(store=store, excluded_chats=excluded_chats, cache=cache, config=config)
+    dp = Dispatcher(
+        store=store,
+        excluded_chats=excluded_chats,
+        cache=cache,
+        settings=settings,
+        config=config,
+    )
     dp.include_router(commands.router)
+    dp.include_router(style.router)
     dp.include_router(business.router)
     dp.include_router(antidelete.router)
 

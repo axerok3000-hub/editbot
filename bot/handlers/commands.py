@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from html import escape
 
 from aiogram import F, Router
-from aiogram.filters import BaseFilter, Command, CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -12,15 +13,9 @@ from aiogram.types import (
 from ..config import Config
 from ..db import MessageCache
 from ..storage import ConnectionStore, ExcludedChatsStore
+from .filters import IsOwner
 
 router = Router(name="commands")
-
-
-class IsOwner(BaseFilter):
-    async def __call__(self, event: Message | CallbackQuery, config: Config) -> bool:
-        user = event.from_user
-        return user is not None and user.id == config.owner_id
-
 
 router.message.filter(IsOwner())
 router.callback_query.filter(IsOwner())
@@ -99,6 +94,24 @@ async def cmd_include(message: Message, excluded_chats: ExcludedChatsStore) -> N
         return
     excluded_chats.include(chat_id)
     await message.answer(f"Чат {chat_id} убран из исключений.")
+
+
+@router.message(Command("effects"))
+async def cmd_effects(message: Message, config: Config) -> None:
+    suffix = config.typewriter_suffix
+    example = escape(f"Привет{suffix}")
+    text = (
+        "✨ Эффекты\n\n"
+        f"<code>{example}</code>\n"
+        "— напишешь так, бот сотрёт суффикс и допечатает текст с "
+        "анимацией печатной машинки. Тапни на пример, чтобы скопировать.\n\n"
+        f"Суффикс сейчас: <code>{escape(suffix)}</code> "
+        "(меняется через TYPEWRITER_SUFFIX)\n\n"
+        "Скорость: до 20 символов — посимвольно, до 120 — не более "
+        "18 шагов, длиннее — без анимации.\n\n"
+        "Стиль текста (жирный, курсив, готический и т.д.) — команда /style"
+    )
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "menu:profile")
