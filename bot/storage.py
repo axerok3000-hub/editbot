@@ -1,10 +1,18 @@
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class ConnectionInfo:
+    business_connection_id: str
+    is_enabled: bool
+    connected_at: int | None  # unix timestamp, None for legacy entries
+
+
 class ConnectionStore:
-    """Persists business_connection_id -> {owner_id, is_enabled} on disk."""
+    """Persists business_connection_id -> {owner_id, is_enabled, connected_at} on disk."""
 
     def __init__(self, path: str):
         self._path = Path(path)
@@ -16,9 +24,11 @@ class ConnectionStore:
             return
         with self._path.open(encoding="utf-8") as f:
             raw = json.load(f)
-        # legacy format was {bcid: owner_id}; normalize to {bcid: {owner_id, is_enabled}}
+        # legacy format was {bcid: owner_id}; normalize to {bcid: {owner_id, is_enabled, connected_at}}
         self._data = {
-            bcid: value if isinstance(value, dict) else {"owner_id": value, "is_enabled": True}
+            bcid: value
+            if isinstance(value, dict)
+            else {"owner_id": value, "is_enabled": True, "connected_at": None}
             for bcid, value in raw.items()
         }
 
@@ -29,8 +39,19 @@ class ConnectionStore:
             json.dump(self._data, f)
         os.replace(tmp_path, self._path)
 
-    def set(self, business_connection_id: str, owner_user_id: int, is_enabled: bool = True) -> None:
-        self._data[business_connection_id] = {"owner_id": owner_user_id, "is_enabled": is_enabled}
+    def set(
+        self,
+        business_connection_id: str,
+        owner_user_id: int,
+        is_enabled: bool = True,
+        connected_at: int | None = None,
+    ) -> None:
+        existing = self._data.get(business_connection_id, {})
+        self._data[business_connection_id] = {
+            "owner_id": owner_user_id,
+            "is_enabled": is_enabled,
+            "connected_at": connected_at if connected_at is not None else existing.get("connected_at"),
+        }
         self._save()
 
     def remove(self, business_connection_id: str) -> None:
@@ -41,11 +62,14 @@ class ConnectionStore:
         entry = self._data.get(business_connection_id)
         return entry["owner_id"] if entry else None
 
-    def get_for_owner(self, owner_id: int) -> tuple[str, bool] | None:
-        """Returns (business_connection_id, is_enabled) for the given owner, if any."""
+    def get_for_owner(self, owner_id: int) -> ConnectionInfo | None:
         for bcid, entry in self._data.items():
             if entry["owner_id"] == owner_id:
-                return bcid, entry["is_enabled"]
+                return ConnectionInfo(
+                    business_connection_id=bcid,
+                    is_enabled=entry["is_enabled"],
+                    connected_at=entry.get("connected_at"),
+                )
         return None
 
 

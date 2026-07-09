@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from aiogram import F, Router
 from aiogram.filters import BaseFilter, Command, CommandStart
 from aiogram.types import (
@@ -23,14 +25,19 @@ router.message.filter(IsOwner())
 router.callback_query.filter(IsOwner())
 
 
+def _format_date(timestamp: int | None) -> str:
+    if timestamp is None:
+        return "—"
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def _main_menu_text(store: ConnectionStore, config: Config) -> str:
     connection = store.get_for_owner(config.owner_id)
-    connected = connection is not None and connection[1]
+    connected = connection is not None and connection.is_enabled
     return (
-        f"🤖 Бот подключён: {'да' if connected else 'нет'}\n"
-        "Эффектов активно: 1\n\n"
-        "Доступно:\n"
-        "текст.p — печать по буквам"
+        "🤖 EditBot\n\n"
+        f"Соединение: {'✅ подключено' if connected else '❌ нет'}\n"
+        "Эффектов: 1"
     )
 
 
@@ -38,17 +45,21 @@ def _main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Эффекты", callback_data="menu:effects"),
-                InlineKeyboardButton(text="Исключения", callback_data="menu:exclusions"),
+                InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
+                InlineKeyboardButton(text="🔗 Соединение", callback_data="menu:conn"),
             ],
-            [InlineKeyboardButton(text="Статус", callback_data="menu:status")],
+            [InlineKeyboardButton(text="🗑 Мои удалённые", callback_data="menu:deleted")],
+            [
+                InlineKeyboardButton(text="✨ Эффекты", callback_data="menu:effects"),
+                InlineKeyboardButton(text="🎮 Игры", callback_data="menu:games"),
+            ],
         ]
     )
 
 
 def _back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="« Назад", callback_data="menu:back")]]
+        inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад", callback_data="menu:back")]]
     )
 
 
@@ -89,52 +100,52 @@ async def cmd_include(message: Message, excluded_chats: ExcludedChatsStore) -> N
     await message.answer(f"Чат {chat_id} убран из исключений.")
 
 
+@router.callback_query(F.data == "menu:profile")
+async def cb_profile(callback: CallbackQuery, store: ConnectionStore, config: Config) -> None:
+    connection = store.get_for_owner(config.owner_id)
+    connected_at = connection.connected_at if connection else None
+    text = (
+        "👤 Профиль\n\n"
+        f"user_id: {config.owner_id}\n"
+        f"Дата подключения: {_format_date(connected_at)}"
+    )
+    await callback.message.edit_text(text, reply_markup=_back_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:conn")
+async def cb_conn(callback: CallbackQuery, store: ConnectionStore, config: Config) -> None:
+    connection = store.get_for_owner(config.owner_id)
+    bcid = connection.business_connection_id if connection else "—"
+    is_enabled = connection.is_enabled if connection else False
+    text = (
+        "🔗 Соединение\n\n"
+        f"business_connection_id: {bcid}\n"
+        f"is_enabled: {'да' if is_enabled else 'нет'}\n\n"
+        "Как подключить:\n"
+        "Настройки → Аккаунт → Автоматизация чатов → выбери бота"
+    )
+    await callback.message.edit_text(text, reply_markup=_back_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:deleted")
+async def cb_deleted(callback: CallbackQuery) -> None:
+    text = "🗑 Мои удалённые\n\nСкоро."
+    await callback.message.edit_text(text, reply_markup=_back_keyboard())
+    await callback.answer()
+
+
 @router.callback_query(F.data == "menu:effects")
 async def cb_effects(callback: CallbackQuery) -> None:
-    text = (
-        "📌 Эффекты\n\n"
-        "текст.p — анимация печати по буквам.\n"
-        "Напиши сообщение с суффиксом .p в конце — бот сотрёт суффикс "
-        "и допечатает текст постепенно.\n\n"
-        "Скорость подстраивается под длину текста:\n"
-        "• до 20 символов — посимвольно\n"
-        "• до 120 символов — не более 18 шагов\n"
-        "• длиннее 120 символов — без анимации, придёт предупреждение в личку"
-    )
+    text = "✨ Эффекты\n\nтекст.p — печать по буквам"
     await callback.message.edit_text(text, reply_markup=_back_keyboard())
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:exclusions")
-async def cb_exclusions(callback: CallbackQuery, excluded_chats: ExcludedChatsStore) -> None:
-    chat_ids = excluded_chats.all()
-    listing = "\n".join(f"• {chat_id}" for chat_id in chat_ids) if chat_ids else "(пусто)"
-    text = (
-        "🚫 Исключения\n\n"
-        f"{listing}\n\n"
-        "В этих чатах эффект печати отключён.\n"
-        "/exclude <chat_id> — добавить чат в исключения\n"
-        "/include <chat_id> — убрать чат из исключений"
-    )
-    await callback.message.edit_text(text, reply_markup=_back_keyboard())
-    await callback.answer()
-
-
-@router.callback_query(F.data == "menu:status")
-async def cb_status(
-    callback: CallbackQuery,
-    store: ConnectionStore,
-    excluded_chats: ExcludedChatsStore,
-    config: Config,
-) -> None:
-    connection = store.get_for_owner(config.owner_id)
-    bcid, is_enabled = connection if connection else ("—", False)
-    text = (
-        "📊 Статус\n\n"
-        f"business_connection_id: {bcid}\n"
-        f"is_enabled: {'да' if is_enabled else 'нет'}\n"
-        f"Чатов в исключениях: {len(excluded_chats.all())}"
-    )
+@router.callback_query(F.data == "menu:games")
+async def cb_games(callback: CallbackQuery) -> None:
+    text = "🎮 Игры\n\nСкоро."
     await callback.message.edit_text(text, reply_markup=_back_keyboard())
     await callback.answer()
 

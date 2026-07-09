@@ -16,7 +16,12 @@ router = Router(name="business")
 async def on_business_connection(
     connection: BusinessConnection, store: ConnectionStore
 ) -> None:
-    store.set(connection.id, connection.user.id, connection.is_enabled)
+    store.set(
+        connection.id,
+        connection.user.id,
+        connection.is_enabled,
+        connected_at=int(connection.date.timestamp()),
+    )
     logger.info(
         "Business connection %s for owner %s, is_enabled=%s",
         connection.id,
