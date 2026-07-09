@@ -17,11 +17,18 @@ Telegram Business Bot, который анимирует эффект печат
 3. Бот ловит апдейт `business_message`, видит, что отправитель — владелец
    подключения, и что текст оканчивается на `.p`.
 4. Через `edit_message_text` (с `business_connection_id`) бот постепенно
-   дописывает текст небольшими порциями с задержкой — получается эффект
-   печати. В конце в чате остаётся текст без суффикса: `Привет`.
+   дописывает текст — получается эффект печати. В конце в чате остаётся
+   текст без суффикса: `Привет`. Скорость подстраивается под длину текста
+   (см. `bot/typewriter.py`): до 20 символов — посимвольно, до 120 — не
+   более 18 шагов, длиннее — без анимации плюс предупреждение тебе в личку.
 
-Всё остальное (сообщения без суффикса, сообщения от собеседника, любые
-чужие апдейты) полностью игнорируется.
+Всё остальное (сообщения без суффикса, сообщения от собеседника, чаты из
+списка исключений, любые чужие апдейты) полностью игнорируется.
+
+В личном чате с самим ботом (не через business, а напрямую) доступны
+команды `/start` (меню с инлайн-кнопками «Эффекты» / «Исключения» /
+«Статус»), `/exclude <chat_id>` и `/include <chat_id>`. Реагирует на них
+только `OWNER_ID` — все остальные отправители молча игнорируются.
 
 ## Установка
 
@@ -36,10 +43,12 @@ cp .env.example .env
 
 ```
 BOT_TOKEN=<токен от @BotFather>
+OWNER_ID=<твой Telegram user_id>
 ```
 
-Остальные параметры (`TYPEWRITER_SUFFIX`, `TYPEWRITER_CHUNK_SIZE`,
-`TYPEWRITER_DELAY_MS`) можно оставить по умолчанию.
+Узнать свой `user_id` можно, например, у [@userinfobot](https://t.me/userinfobot).
+Остальные параметры (`TYPEWRITER_SUFFIX`, `CONNECTIONS_FILE`,
+`EXCLUDED_CHATS_FILE`) можно оставить по умолчанию.
 
 ## Подключение бота как Business Bot
 
@@ -72,7 +81,9 @@ python main.py
    запуска `python main.py`. Порт открывать не нужно — сервис фоновый.
 3. Открой сервис → **Variables** → добавь:
    - `BOT_TOKEN` — токен от @BotFather
+   - `OWNER_ID` — твой Telegram user_id
    - `CONNECTIONS_FILE` = `/data/connections.json`
+   - `EXCLUDED_CHATS_FILE` = `/data/excluded_chats.json`
 4. Добавь постоянное хранилище: сервис → **Settings → Volumes** →
    **New Volume**, mount path `/data`. Это важно: без volume файл
    `connections.json` будет стираться при каждом передеплое, и после
@@ -88,9 +99,10 @@ python main.py
 ## Структура
 
 ```
-main.py            точка входа, long polling
-bot/config.py       загрузка настроек из .env
-bot/storage.py       хранение business_connection_id -> owner_id (storage/connections.json)
-bot/typewriter.py    построчная (посимвольная) анимация через edit_message_text
-bot/handlers.py      обработчики business_connection и business_message
+main.py                     точка входа, long polling
+bot/config.py                загрузка настроек из .env
+bot/storage.py                хранение business-подключений и списка исключений
+bot/typewriter.py             адаптивная анимация печати через edit_message_text
+bot/handlers/business.py      обработчики business_connection и business_message
+bot/handlers/commands.py      /start, /exclude, /include и инлайн-меню (только OWNER_ID)
 ```

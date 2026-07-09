@@ -3,9 +3,9 @@ import logging
 from aiogram import Bot, Router
 from aiogram.types import BusinessConnection, Message
 
-from .config import Config
-from .storage import ConnectionStore
-from .typewriter import type_out
+from ..config import Config
+from ..storage import ConnectionStore, ExcludedChatsStore
+from ..typewriter import type_out
 
 logger = logging.getLogger(__name__)
 
@@ -16,21 +16,22 @@ router = Router(name="business")
 async def on_business_connection(
     connection: BusinessConnection, store: ConnectionStore
 ) -> None:
-    if connection.is_enabled:
-        store.set(connection.id, connection.user.id)
-        logger.info(
-            "Business connection %s enabled for owner %s",
-            connection.id,
-            connection.user.id,
-        )
-    else:
-        store.remove(connection.id)
-        logger.info("Business connection %s disabled", connection.id)
+    store.set(connection.id, connection.user.id, connection.is_enabled)
+    logger.info(
+        "Business connection %s for owner %s, is_enabled=%s",
+        connection.id,
+        connection.user.id,
+        connection.is_enabled,
+    )
 
 
 @router.business_message()
 async def on_business_message(
-    message: Message, bot: Bot, store: ConnectionStore, config: Config
+    message: Message,
+    bot: Bot,
+    store: ConnectionStore,
+    excluded_chats: ExcludedChatsStore,
+    config: Config,
 ) -> None:
     bcid = message.business_connection_id
     if bcid is None or message.text is None:
@@ -39,6 +40,9 @@ async def on_business_message(
     owner_id = store.get_owner(bcid)
     if owner_id is None or message.from_user is None or message.from_user.id != owner_id:
         return  # not our own outgoing message - ignore
+
+    if excluded_chats.is_excluded(message.chat.id):
+        return
 
     text = message.text
     suffix = config.typewriter_suffix
@@ -55,6 +59,5 @@ async def on_business_message(
         chat_id=message.chat.id,
         message_id=message.message_id,
         target_text=target_text,
-        chunk_size=config.typewriter_chunk_size,
-        delay_seconds=config.typewriter_delay_ms / 1000,
+        owner_id=owner_id,
     )
