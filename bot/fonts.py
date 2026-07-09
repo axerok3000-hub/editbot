@@ -1,7 +1,20 @@
-"""Unicode character substitution tables for fancy latin-only text styles.
+"""Unicode character substitution tables for fancy text styles.
 
-Cyrillic and everything else is left untouched — only ASCII a-z/A-Z are mapped.
+Unicode has no dedicated "gothic"/"italic" glyphs for Cyrillic (unlike Latin,
+which got its own Mathematical Alphanumeric Symbols block) - such letterforms
+simply don't exist as separate codepoints. As a partial approximation, the
+handful of Cyrillic letters that are near-identical in shape to a Latin
+letter (the same set used as IDN homograph confusables) are mapped through
+their Latin lookalike before styling. Everything else - including the
+remaining ~20 Cyrillic letters with no Latin lookalike - is left untouched.
 """
+
+# Cyrillic letters that are visually near-identical to a Latin letter.
+CYRILLIC_TO_LATIN_HOMOGLYPHS: dict[str, str] = {
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H",
+    "О": "O", "Р": "P", "С": "C", "Т": "T", "У": "Y", "Х": "X",
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x",
+}
 
 # Mathematical Fraktur (U+1D504-1D537), with the canonical exceptions for
 # C, H, I, R, Z which reuse the older Letterlike Symbols block.
@@ -43,7 +56,14 @@ ITALIC_UNICODE_MAP: dict[str, str] = {
 
 
 def _apply_map(text: str, mapping: dict[str, str]) -> str:
-    return "".join(mapping.get(ch, ch) for ch in text)
+    result = []
+    for ch in text:
+        if ch in mapping:
+            result.append(mapping[ch])
+            continue
+        latin = CYRILLIC_TO_LATIN_HOMOGLYPHS.get(ch)
+        result.append(mapping.get(latin, latin) if latin is not None else ch)
+    return "".join(result)
 
 
 def to_gothic(text: str) -> str:

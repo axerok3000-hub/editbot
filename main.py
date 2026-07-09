@@ -5,7 +5,7 @@ import time
 from aiogram import Bot, Dispatcher
 
 from bot.config import load_config
-from bot.db import MessageCache, SettingsStore
+from bot.db import KnownChatsStore, MessageCache, SettingsStore
 from bot.handlers import antidelete, business, commands, style
 from bot.storage import ConnectionStore, ExcludedChatsStore
 
@@ -31,6 +31,7 @@ async def main() -> None:
     excluded_chats = ExcludedChatsStore(config.excluded_chats_file)
     cache = MessageCache(config.cache_db_file)
     settings = SettingsStore(config.cache_db_file)
+    known_chats = KnownChatsStore(config.cache_db_file)
 
     bot = Bot(token=config.bot_token)
     dp = Dispatcher(
@@ -38,6 +39,7 @@ async def main() -> None:
         excluded_chats=excluded_chats,
         cache=cache,
         settings=settings,
+        known_chats=known_chats,
         config=config,
     )
     dp.include_router(commands.router)

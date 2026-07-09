@@ -4,12 +4,12 @@ from aiogram import Bot, Router
 from aiogram.types import BusinessConnection, Message
 
 from ..config import Config
-from ..db import MessageCache, SettingsStore
+from ..db import KnownChatsStore, MessageCache, SettingsStore
 from ..storage import ConnectionStore, ExcludedChatsStore
 from ..style_apply import apply_style_to_message
 from ..styles import DEFAULT_STYLE
 from ..typewriter import type_out
-from .antidelete import cache_incoming_message
+from .antidelete import cache_incoming_message, sender_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ async def on_business_message(
     excluded_chats: ExcludedChatsStore,
     cache: MessageCache,
     settings: SettingsStore,
+    known_chats: KnownChatsStore,
     config: Config,
 ) -> None:
     bcid = message.business_connection_id
@@ -53,8 +54,11 @@ async def on_business_message(
         return
 
     if message.from_user.id != owner_id:
+        known_chats.touch(message.chat.id, sender_display_name(message.from_user))
         cache_incoming_message(message, cache)  # message from the chat partner - track for anti-delete
         return
+
+    known_chats.touch(message.chat.id, display_name=None)  # keep last_seen fresh, don't clobber label
 
     if excluded_chats.is_excluded(message.chat.id):
         return

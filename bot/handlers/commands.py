@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from html import escape
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -11,7 +11,7 @@ from aiogram.types import (
 )
 
 from ..config import Config
-from ..db import MessageCache
+from ..db import KnownChatsStore, MessageCache
 from ..storage import ConnectionStore, ExcludedChatsStore
 from .filters import IsOwner
 
@@ -19,6 +19,8 @@ router = Router(name="commands")
 
 router.message.filter(IsOwner())
 router.callback_query.filter(IsOwner())
+
+MAX_EXCLUSION_CHATS_SHOWN = 15
 
 
 def _format_date(timestamp: int | None) -> str:
@@ -44,6 +46,10 @@ def _main_menu_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
                 InlineKeyboardButton(text="🔗 Соединение", callback_data="menu:conn"),
             ],
+            [
+                InlineKeyboardButton(text="🎨 Стиль", callback_data="menu:style"),
+                InlineKeyboardButton(text="🚫 Исключения", callback_data="menu:exclusions"),
+            ],
             [InlineKeyboardButton(text="🗑 Мои удалённые", callback_data="menu:deleted")],
             [
                 InlineKeyboardButton(text="✨ Эффекты", callback_data="menu:effects"),
@@ -59,59 +65,9 @@ def _back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _parse_chat_id_arg(message: Message) -> int | None:
-    if not message.text:
-        return None
-    parts = message.text.split(maxsplit=1)
-    if len(parts) != 2:
-        return None
-    try:
-        return int(parts[1].strip())
-    except ValueError:
-        return None
-
-
 @router.message(CommandStart())
 async def cmd_start(message: Message, store: ConnectionStore, config: Config) -> None:
     await message.answer(_main_menu_text(store, config), reply_markup=_main_menu_keyboard())
-
-
-@router.message(Command("exclude"))
-async def cmd_exclude(message: Message, excluded_chats: ExcludedChatsStore) -> None:
-    chat_id = _parse_chat_id_arg(message)
-    if chat_id is None:
-        await message.answer("Использование: /exclude <chat_id>")
-        return
-    excluded_chats.exclude(chat_id)
-    await message.answer(f"Чат {chat_id} добавлен в исключения.")
-
-
-@router.message(Command("include"))
-async def cmd_include(message: Message, excluded_chats: ExcludedChatsStore) -> None:
-    chat_id = _parse_chat_id_arg(message)
-    if chat_id is None:
-        await message.answer("Использование: /include <chat_id>")
-        return
-    excluded_chats.include(chat_id)
-    await message.answer(f"Чат {chat_id} убран из исключений.")
-
-
-@router.message(Command("effects"))
-async def cmd_effects(message: Message, config: Config) -> None:
-    suffix = config.typewriter_suffix
-    example = escape(f"Привет{suffix}")
-    text = (
-        "✨ Эффекты\n\n"
-        f"<code>{example}</code>\n"
-        "— напишешь так, бот сотрёт суффикс и допечатает текст с "
-        "анимацией печатной машинки. Тапни на пример, чтобы скопировать.\n\n"
-        f"Суффикс сейчас: <code>{escape(suffix)}</code> "
-        "(меняется через TYPEWRITER_SUFFIX)\n\n"
-        "Скорость: до 20 символов — посимвольно, до 120 — не более "
-        "18 шагов, длиннее — без анимации.\n\n"
-        "Стиль текста (жирный, курсив, готический и т.д.) — команда /style"
-    )
-    await message.answer(text, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "menu:profile")
@@ -164,9 +120,20 @@ async def cb_deleted(callback: CallbackQuery, cache: MessageCache) -> None:
 
 
 @router.callback_query(F.data == "menu:effects")
-async def cb_effects(callback: CallbackQuery) -> None:
-    text = "✨ Эффекты\n\nтекст.p — печать по буквам"
-    await callback.message.edit_text(text, reply_markup=_back_keyboard())
+async def cb_effects(callback: CallbackQuery, config: Config) -> None:
+    suffix = config.typewriter_suffix
+    example = escape(f"Привет{suffix}")
+    text = (
+        "✨ Эффекты\n\n"
+        f"<code>{example}</code>\n"
+        "— напишешь так, бот сотрёт суффикс и допечатает текст с "
+        "анимацией печатной машинки. Тапни на пример, чтобы скопировать.\n\n"
+        f"Суффикс сейчас: <code>{escape(suffix)}</code>\n\n"
+        "Скорость: до 20 символов — посимвольно, до 120 — не более "
+        "18 шагов, длиннее — без анимации.\n\n"
+        "Стиль текста (жирный, курсив, готический и т.д.) — кнопка «🎨 Стиль» в меню."
+    )
+    await callback.message.edit_text(text, reply_markup=_back_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 
@@ -174,6 +141,54 @@ async def cb_effects(callback: CallbackQuery) -> None:
 async def cb_games(callback: CallbackQuery) -> None:
     text = "🎮 Игры\n\nСкоро."
     await callback.message.edit_text(text, reply_markup=_back_keyboard())
+    await callback.answer()
+
+
+def _exclusions_view(
+    known_chats: KnownChatsStore, excluded_chats: ExcludedChatsStore
+) -> tuple[str, InlineKeyboardMarkup]:
+    chats = known_chats.recent(limit=MAX_EXCLUSION_CHATS_SHOWN)
+    rows = []
+    if chats:
+        for chat in chats:
+            excluded = excluded_chats.is_excluded(chat.chat_id)
+            label = chat.display_name or str(chat.chat_id)
+            marker = "🚫" if excluded else "✅"
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"{marker} {label}", callback_data=f"excl:toggle:{chat.chat_id}"
+                    )
+                ]
+            )
+        body = "✅ — эффект печати включён, 🚫 — выключен.\nТапни на чат, чтобы переключить."
+    else:
+        body = "(чатов пока нет — бот ещё не видел твоих business-переписок)"
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu:back")])
+    text = f"🚫 Исключения\n\n{body}"
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == "menu:exclusions")
+async def cb_exclusions(
+    callback: CallbackQuery, known_chats: KnownChatsStore, excluded_chats: ExcludedChatsStore
+) -> None:
+    text, markup = _exclusions_view(known_chats, excluded_chats)
+    await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("excl:toggle:"))
+async def cb_exclusions_toggle(
+    callback: CallbackQuery, known_chats: KnownChatsStore, excluded_chats: ExcludedChatsStore
+) -> None:
+    chat_id = int(callback.data.split(":")[-1])
+    if excluded_chats.is_excluded(chat_id):
+        excluded_chats.include(chat_id)
+    else:
+        excluded_chats.exclude(chat_id)
+    text, markup = _exclusions_view(known_chats, excluded_chats)
+    await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
 

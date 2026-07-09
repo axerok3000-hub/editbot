@@ -143,3 +143,62 @@ class SettingsStore:
                 """,
                 (owner_id, style),
             )
+
+
+@dataclass(frozen=True)
+class KnownChat:
+    chat_id: int
+    display_name: str | None
+    last_seen: int
+
+
+class KnownChatsStore:
+    """SQLite-backed record of business chat_ids the bot has seen, for the
+    exclusions menu (so chats can be picked without typing a chat_id)."""
+
+    def __init__(self, path: str):
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS known_chats (
+                    chat_id INTEGER PRIMARY KEY,
+                    display_name TEXT,
+                    last_seen INTEGER NOT NULL
+                )
+                """
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def touch(self, chat_id: int, display_name: str | None, seen_at: int | None = None) -> None:
+        seen_at = seen_at if seen_at is not None else int(time.time())
+        with self._connect() as conn:
+            if display_name is not None:
+                conn.execute(
+                    """
+                    INSERT INTO known_chats (chat_id, display_name, last_seen) VALUES (?, ?, ?)
+                    ON CONFLICT(chat_id) DO UPDATE SET
+                        display_name = excluded.display_name, last_seen = excluded.last_seen
+                    """,
+                    (chat_id, display_name, seen_at),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO known_chats (chat_id, display_name, last_seen) VALUES (?, NULL, ?)
+                    ON CONFLICT(chat_id) DO UPDATE SET last_seen = excluded.last_seen
+                    """,
+                    (chat_id, seen_at),
+                )
+
+    def recent(self, limit: int = 15) -> list[KnownChat]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM known_chats ORDER BY last_seen DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [KnownChat(**dict(row)) for row in rows]
