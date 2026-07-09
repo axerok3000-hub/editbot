@@ -60,6 +60,31 @@ python main.py
 Бот работает через long polling — процесс должен быть постоянно запущен
 (systemd, screen/tmux, Docker и т.п.).
 
+## Деплой на Railway
+
+Бот — фоновый воркер (long polling), HTTP-порт не нужен. Всё делается через
+веб-интерфейс Railway, можно с телефона.
+
+1. Зайди на [railway.app](https://railway.app) → **New Project** →
+   **Deploy from GitHub repo** → выбери `axerok3000-hub/editbot`
+   (ветку `claude/telegram-typewriter-bot-melhq5`, или замерджи её в main).
+2. Railway распознает `railway.json`/`Procfile` и сам поставит команду
+   запуска `python main.py`. Порт открывать не нужно — сервис фоновый.
+3. Открой сервис → **Variables** → добавь:
+   - `BOT_TOKEN` — токен от @BotFather
+   - `CONNECTIONS_FILE` = `/data/connections.json`
+4. Добавь постоянное хранилище: сервис → **Settings → Volumes** →
+   **New Volume**, mount path `/data`. Это важно: без volume файл
+   `connections.json` будет стираться при каждом передеплое, и после
+   рестарта бот "забудет" про business-подключение, пока ты не переподключишь
+   его заново в настройках Telegram.
+5. **Deploy**. В логах сервиса должно появиться `Start polling`.
+6. Подключи бота в Telegram как Business Bot (см. раздел выше) — придёт
+   апдейт `business_connection`, бот сохранит его в `/data/connections.json`.
+
+Обновления кода: просто пушь в подключённую ветку — Railway передеплоит
+автоматически.
+
 ## Структура
 
 ```
