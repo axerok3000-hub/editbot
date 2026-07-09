@@ -13,6 +13,8 @@ class Config:
     typewriter_suffix: str
     connections_file: str
     excluded_chats_file: str
+    cache_db_file: str
+    cache_retention_days: int
 
 
 def load_config() -> Config:
@@ -26,4 +28,6 @@ def load_config() -> Config:
         excluded_chats_file=os.environ.get(
             "EXCLUDED_CHATS_FILE", "storage/excluded_chats.json"
         ),
+        cache_db_file=os.environ.get("CACHE_DB_FILE", "storage/cache.db"),
+        cache_retention_days=int(os.environ.get("CACHE_RETENTION_DAYS", "7")),
     )

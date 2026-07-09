@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 venv/
 storage/connections.json
+storage/excluded_chats.json
+storage/cache.db

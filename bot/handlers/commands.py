@@ -10,6 +10,7 @@ from aiogram.types import (
 )
 
 from ..config import Config
+from ..db import MessageCache
 from ..storage import ConnectionStore, ExcludedChatsStore
 
 router = Router(name="commands")
@@ -129,9 +130,22 @@ async def cb_conn(callback: CallbackQuery, store: ConnectionStore, config: Confi
     await callback.answer()
 
 
+def _deleted_entry_line(cached) -> str:
+    when = datetime.fromtimestamp(cached.created_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+    preview = cached.text or (f"[{cached.media_type}]" if cached.media_type else "(без текста)")
+    if len(preview) > 60:
+        preview = preview[:57] + "..."
+    return f"• {when} · {cached.sender_name} · чат {cached.chat_id}\n  {preview}"
+
+
 @router.callback_query(F.data == "menu:deleted")
-async def cb_deleted(callback: CallbackQuery) -> None:
-    text = "🗑 Мои удалённые\n\nСкоро."
+async def cb_deleted(callback: CallbackQuery, cache: MessageCache) -> None:
+    records = cache.recent_deleted(limit=10)
+    if records:
+        body = "\n\n".join(_deleted_entry_line(r) for r in records)
+    else:
+        body = "(пусто)"
+    text = f"🗑 Мои удалённые\n\n{body}"
     await callback.message.edit_text(text, reply_markup=_back_keyboard())
     await callback.answer()
 

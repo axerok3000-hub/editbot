@@ -4,8 +4,10 @@ from aiogram import Bot, Router
 from aiogram.types import BusinessConnection, Message
 
 from ..config import Config
+from ..db import MessageCache
 from ..storage import ConnectionStore, ExcludedChatsStore
 from ..typewriter import type_out
+from .antidelete import cache_incoming_message
 
 logger = logging.getLogger(__name__)
 
@@ -36,20 +38,27 @@ async def on_business_message(
     bot: Bot,
     store: ConnectionStore,
     excluded_chats: ExcludedChatsStore,
+    cache: MessageCache,
     config: Config,
 ) -> None:
     bcid = message.business_connection_id
-    if bcid is None or message.text is None:
+    if bcid is None:
         return
 
     owner_id = store.get_owner(bcid)
-    if owner_id is None or message.from_user is None or message.from_user.id != owner_id:
-        return  # not our own outgoing message - ignore
+    if owner_id is None or message.from_user is None:
+        return
+
+    if message.from_user.id != owner_id:
+        cache_incoming_message(message, cache)  # message from the chat partner - track for anti-delete
+        return
 
     if excluded_chats.is_excluded(message.chat.id):
         return
 
     text = message.text
+    if text is None:
+        return
     suffix = config.typewriter_suffix
     if not text.endswith(suffix):
         return
