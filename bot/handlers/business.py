@@ -3,12 +3,11 @@ import logging
 from aiogram import Bot, Router
 from aiogram.types import BusinessConnection, Message
 
-from ..config import Config
 from ..db import KnownChatsStore, MessageCache, SettingsStore
+from ..effects import apply_effect, parse_effect_suffix
 from ..storage import ConnectionStore, ExcludedChatsStore
 from ..style_apply import apply_style_to_message
 from ..styles import DEFAULT_STYLE
-from ..typewriter import type_out
 from .antidelete import cache_incoming_message, sender_display_name
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,6 @@ async def on_business_message(
     cache: MessageCache,
     settings: SettingsStore,
     known_chats: KnownChatsStore,
-    config: Config,
 ) -> None:
     bcid = message.business_connection_id
     if bcid is None:
@@ -67,17 +65,16 @@ async def on_business_message(
     if text is None:
         return
 
-    suffix = config.typewriter_suffix
-    if text.endswith(suffix):
-        target_text = text[: -len(suffix)]
-        if not target_text:
-            return
-        await type_out(
+    parsed = parse_effect_suffix(text)
+    if parsed is not None:
+        target_text, effect_key = parsed
+        await apply_effect(
             bot=bot,
             business_connection_id=bcid,
             chat_id=message.chat.id,
             message_id=message.message_id,
             target_text=target_text,
+            effect_key=effect_key,
             owner_id=owner_id,
         )
         return

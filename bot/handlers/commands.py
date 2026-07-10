@@ -35,7 +35,7 @@ def _main_menu_text(store: ConnectionStore, config: Config) -> str:
     return (
         "🤖 EditBot\n\n"
         f"Соединение: {'✅ подключено' if connected else '❌ нет'}\n"
-        "Эффектов: 1"
+        "Эффектов: 5"
     )
 
 
@@ -119,19 +119,30 @@ async def cb_deleted(callback: CallbackQuery, cache: MessageCache) -> None:
     await callback.answer()
 
 
+_EFFECT_EXAMPLES = [
+    (".p", "печать по буквам"),
+    (".r", "бегущая строка"),
+    (".h", "глитч"),
+    (".s", "пульсация (обычный/КАПС)"),
+    (".f", "случайный шрифт, без анимации"),
+]
+
+
 @router.callback_query(F.data == "menu:effects")
-async def cb_effects(callback: CallbackQuery, config: Config) -> None:
-    suffix = config.typewriter_suffix
-    example = escape(f"Привет{suffix}")
+async def cb_effects(callback: CallbackQuery) -> None:
+    examples = "\n".join(
+        f"<code>{escape(f'Привет{suffix}')}</code> — {description}"
+        for suffix, description in _EFFECT_EXAMPLES
+    )
     text = (
         "✨ Эффекты\n\n"
-        f"<code>{example}</code>\n"
-        "— напишешь так, бот сотрёт суффикс и допечатает текст с "
-        "анимацией печатной машинки. Тапни на пример, чтобы скопировать.\n\n"
-        f"Суффикс сейчас: <code>{escape(suffix)}</code>\n\n"
-        "Скорость: до 20 символов — посимвольно, до 120 — не более "
-        "18 шагов, длиннее — без анимации.\n\n"
-        "Стиль текста (жирный, курсив, готический и т.д.) — кнопка «🎨 Стиль» в меню."
+        "Допиши суффикс в конце сообщения — бот сотрёт его и применит эффект. "
+        "Тапни на пример, чтобы скопировать.\n\n"
+        f"{examples}\n\n"
+        "Длиннее 120 символов — без анимации, придёт предупреждение в личку.\n"
+        "Не больше 6 эффектов в минуту суммарно и один активный на чат — если "
+        "лимит сработает, эффект пропускается и приходит уведомление.\n\n"
+        "Стиль текста (жирный, курсив, шрифты и т.д.) — кнопка «🎨 Стиль» в меню."
     )
     await callback.message.edit_text(text, reply_markup=_back_keyboard(), parse_mode="HTML")
     await callback.answer()
